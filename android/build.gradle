@@ -1,0 +1,130 @@
+// Plugin-level build for snap_camera_kit_processor.
+//
+// Phase 1 (this file): scaffold only. Snap SDK dependency is commented
+// out and will be enabled in Phase 3 when the Camera Kit API token /
+// access has been granted by Snap. Keeping the rest of the dependency
+// graph wired so Phase 2 LiveKit integration work can compile and run
+// without Snap access.
+//
+// Dependency model:
+//   - `flutter_webrtc` (Flutter plugin project) provides
+//     `com.cloudwebrtc.webrtc.*` (FlutterWebRTCPlugin, LocalVideoTrack,
+//     ExternalVideoFrameProcessing).
+//   - `io.github.webrtc-sdk:android` provides `org.webrtc.*` (VideoFrame,
+//     JavaI420Buffer, YuvHelper, SurfaceTextureHelper, VideoCapturer).
+//   - Snap Camera Kit Android SDK from Snap's Maven repo (enabled Phase 3).
+
+group 'net.vibezo.snap_camera_kit_processor'
+version '0.0.1'
+
+// Snap Camera Kit Android SDK version. Pinned explicitly — Maven
+// Central's search index can lag the latest release, but exact-version
+// resolution works. Bump deliberately and re-verify on-device.
+// 1.50.0: latest on Maven Central — picks up lenses built with newer Lens
+// Studio (their higher mobile min-SDK was filtered out on 1.49.0).
+ext.cameraKitVersion = '1.50.0'
+
+buildscript {
+    ext.kotlin_version = '2.1.0'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        // Snap Camera Kit Android SDK now ships on Maven Central
+        // (com.snap.camerakit:*). The old GCS bucket
+        // https://storage.googleapis.com/snap-kit-build/maven is
+        // deprecated and no longer required.
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace 'net.vibezo.snap_camera_kit_processor'
+    compileSdk 36
+
+    defaultConfig {
+        // Snap Camera Kit Android SDK requires minSdk 23 per its docs.
+        // We're already at 24 to match the rest of the app; keep that.
+        minSdkVersion 24
+        // R8 keep rules the controller's reflection depends on — see the file.
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    // Snap Camera Kit SDK. `camerakit` is the core (Session, ImageProcessor,
+    // outputFrom, supported(), LensesComponent). `camerakit-kotlin` adds the
+    // Kotlin conveniences (Repository.Result.whenHasFirst). `support-camerax`
+    // provides `CameraXImageProcessorSource` so **Camera Kit owns the camera**
+    // and renders directly (official pipeline) — this is what removes the lag
+    // from the old "push WebRTC frames in, pull them back" model.
+    implementation "com.snap.camerakit:camerakit:$cameraKitVersion"
+    implementation "com.snap.camerakit:camerakit-kotlin:$cameraKitVersion"
+    implementation "com.snap.camerakit:support-camerax:$cameraKitVersion"
+
+    // ProcessLifecycleOwner — a process-wide LifecycleOwner to bind CameraX to
+    // (the plugin has no Activity lifecycle of its own).
+    implementation 'androidx.lifecycle:lifecycle-process:2.8.7'
+
+    // Camera2 interop (Camera2CameraControl / CaptureRequestOptions) — the
+    // supported way to push a CONTROL_AE_TARGET_FPS_RANGE onto the CameraX
+    // camera Camera Kit owns, which is what pins CAPTURE fps for thermal relief
+    // (see SnapCameraKitController.applyCaptureFrameRate). It already arrives
+    // transitively via support-camerax, but this is a COMPILE-TIME reference
+    // now, so declare it explicitly rather than depending on another artifact's
+    // dependency graph. Version-aligned by the CameraX BOM-less convention:
+    // camera-camera2 matches whatever camera-core support-camerax resolves.
+    implementation 'androidx.camera:camera-camera2:1.5.3'
+
+    // ProcessCameraProvider — used to ask CameraX which lens facings this
+    // device actually exposes BEFORE handing a facing to Camera Kit's
+    // startPreview. Camera Kit's LenientLensFacingCameraFilter echoes its
+    // input list when nothing matches, and CameraX then calls retainAll on
+    // that unmodifiable list — a fatal UnsupportedOperationException thrown
+    // inside Camera Kit's own main-looper runnable, so it cannot be caught
+    // at the call site (see SnapCameraKitController.startPreviewGuarded).
+    // Arrives transitively via support-camerax; declared because it is a
+    // COMPILE-TIME reference now.
+    implementation 'androidx.camera:camera-lifecycle:1.5.3'
+
+    // ── Unit tests (JVM, `./gradlew :snap_camera_kit_processor:test`) ────────
+    // Test-only: never enters an app artifact. Scoped deliberately narrowly —
+    // the only thing unit-tested here is IntervalAccumulator, which is pure
+    // Kotlin with no Android types precisely so it CAN be tested on a plain JVM
+    // (no Robolectric, no instrumentation, no device). Everything else in this
+    // plugin needs a real camera and is verified on-device.
+    testImplementation 'junit:junit:4.13.2'
+
+    // org.webrtc.* types (VideoFrame, SurfaceTextureHelper, VideoCapturer,
+    // CapturerObserver). Same WebRTC build flutter_webrtc bundles, imported
+    // directly so the plugin compiles standalone.
+    implementation 'io.github.webrtc-sdk:android:125.6422.03'
+
+    // FlutterWebRTCPlugin + LocalVideoTrack — sourced from the host app's
+    // flutter_webrtc plugin via Gradle project dependency.
+    implementation project(':flutter_webrtc')
+
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    implementation 'androidx.core:core-ktx:1.13.1'
+}

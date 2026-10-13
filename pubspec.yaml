@@ -1,0 +1,31 @@
+name: snap_camera_kit_processor
+description: Snap Camera Kit AR pipeline wired into LiveKit's video transport for vibezo.
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # flutter_webrtc gives us the MediaStreamTrack type for the LiveKit
+  # TrackProcessor interface AND the LocalVideoTrack handle the native
+  # plugin attaches its frame processor to. Already transitively pulled
+  # in via livekit_client but listed explicitly so the analyzer sees it
+  # at the package boundary.
+  flutter_webrtc: ^1.4.0
+  livekit_client: ^2.6.5
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: net.vibezo.snap_camera_kit_processor
+        pluginClass: SnapCameraKitProcessorPlugin
+      ios:
+        pluginClass: SnapCameraKitProcessorPlugin
